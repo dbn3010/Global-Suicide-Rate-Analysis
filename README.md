@@ -29,6 +29,7 @@ By using glimpse(suicide_rate) and summary(suicide_rate), we could find,
 •	6 Categorical variables: Country, Year, Sex, Age (range), Country-Year, Generation  
 •	2 Discrete variables: Suicide Number, Population  
 •	4 Continuous variables: Suicides per 100k Population, HDI for Year, GDP for Year, GDP per Capita  
+<br>
 
 ![image](https://user-images.githubusercontent.com/50405283/162327744-892bead5-49b3-457a-9870-e991fc19637d.png)
 
