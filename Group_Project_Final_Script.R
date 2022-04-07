@@ -1,0 +1,709 @@
+# Final Project
+# Class: ALY6010-70516 
+# Group: Amryta Panda, Durga Bhanu Nayak, Yu Qiu
+# Date: 12/14/2021
+
+
+# importing required libraries
+library(tidyverse)
+library(RColorBrewer)
+library(ggplot2)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+library(psych)
+library(car)
+library(dplyr)
+library(countrycode)
+library(ggpubr)
+library(ggpmisc)
+
+options(scipen = 999)      # disabling scientific notifications
+
+# importing data set
+suicide_rate <- read.csv("suicide_rate.csv")
+
+# Checking top rows of the dataset
+head(suicide_rate)
+
+# summary of the dataset
+summary(suicide_rate)
+
+# Getting the glimpse of the dataset (rows and columns)
+glimpse(suicide_rate)
+
+
+# To check if any null value is present
+sum(is.na(suicide_rate))
+
+table(suicide_rate$age, suicide_rate$generation)
+
+
+# Dropping null rows for HDI.for.year as it contains lots of null values
+suicide_rate1 <- suicide_rate[is.na(suicide_rate$HDI.for.year) == FALSE,]
+
+
+# Renaming columns
+suicide_rate1 <- suicide_rate1 %>%
+  rename(gdp_for_year_100M = gdp_for_year....,
+         gdp_per_capita = gdp_per_capita....,
+         country_year = country.year,
+         country = names(suicide_rate[1]))
+
+# Fixing variables
+suicide_rate1$age<- gsub(" years", "", suicide_rate1$age)
+suicide_rate1$gdp_for_year_100M <- gsub(",", "", suicide_rate1$gdp_for_year_100M)
+suicide_rate1$gdp_for_year_100M <- as.numeric(suicide_rate1$gdp_for_year_100M)
+suicide_rate1$sex <- ifelse(suicide_rate1$sex == "male", "Male", "Female")
+
+
+# Converting GDP for Year in 100 Millions
+suicide_rate1$gdp_for_year_100M <- suicide_rate1$gdp_for_year_100M/100000000
+
+# Adding the continent to the dataset based on the countries
+suicide_rate1$continent <- countrycode(sourcevar = suicide_rate1[,"country"],
+                                       origin = "country.name",
+                                       destination = "continent")
+
+# Adding year group variable
+suicide_rate1$year_group <- ifelse(suicide_rate1$year < 1990, "Before 1990", 
+                                   ifelse(suicide_rate1$year >= 1990 & suicide_rate1$year < 2000, "1990 - 1999",
+                                          ifelse(suicide_rate1$year >= 2000 & suicide_rate1$year < 2010, "2000 - 2009","2010 onwards")))
+
+# Factors:
+
+# Nominal
+lst <- c("country","sex")
+suicide_rate1[lst] <- lapply(suicide_rate1[lst], as.factor)
+
+suicide_rate1$continent <- as.factor(suicide_rate1$continent)
+
+# Ordinal
+#unique(suicide_rate1$age)
+suicide_rate1$age <- factor(suicide_rate1$age, ordered = T,
+                            levels = c("5-14","15-24","25-34","35-54","55-74","75+"))
+
+#unique(suicide_rate1$generation)
+suicide_rate1$generation <- factor(suicide_rate1$generation, ordered = T,
+                                   levels = c("G.I. Generation","Silent","Boomers","Generation X","Millenials","Generation Z"))
+
+suicide_rate1$year_group <- factor(suicide_rate1$year_group, ordered = T,
+                                   levels = c("Before 1990","1990 - 1999","2000 - 2009", "2010 onwards"))
+
+
+# dropping the column country_year as it is redundant
+suicide_rate2 <- subset(suicide_rate1, select = -c(country_year))
+
+
+
+
+# creating list for numeric variable names
+num_list <- c("suicides_no","population", "suicides.100k.pop","HDI.for.year","gdp_for_year_100M","gdp_per_capita")
+
+# Descriptive statistics fo the dataset (numerical values)
+tbl_desc <- as.data.frame(describe(suicide_rate2[num_list]))
+
+kable(round(tbl_desc,2), caption = "<center> Descriptive Statistics of Numerical variables") %>%
+  kable_classic()
+
+
+
+
+# Suicide number of each generation
+
+plt1 <- ggplot(suicide_rate2, mapping = aes(x=generation, y=suicides_no, fill = sex))+
+  geom_bar(stat = "identity")+
+  scale_fill_brewer(palette = "Paired")+
+  labs(title = "Suicides per Generation", x= "Genration Type", y = "Number of suicides")+
+  theme_light()
+plt1
+
+
+plt2 <- ggplot(data = suicide_rate2, mapping = aes(x = reorder(year_group, -suicides_no), y = suicides_no, fill = year_group)) +  geom_bar(stat = "identity") + 
+  scale_fill_brewer(palette="YlOrRd") + 
+  labs(title="Suicide Rate of each year group",x="Year Group", y = "Suicide count") + 
+  theme_classic()
+
+plt2
+
+
+
+#Average Suicide Number per Generation
+par(mfcol = c(1,1))
+
+sumgen <- tapply(suicide_rate2$suicides_no, INDEX = list(suicide_rate2$generation), mean, na.rm=TRUE)
+sumgen
+x <- barplot(sumgen,
+        col = brewer.pal(6, "Paired"),
+        ylim = c(0, 400),
+        xlab = "Generation",
+        ylab = "Average Suicide Number",
+        las = 1,
+        cex.axis = 0.8,
+        cex.names = 0.8,
+        main = "Average Suicide Number per Generation")
+text(y = sumgen,
+     x,
+     round(sumgen,0),
+     cex = 0.8,
+     pos = 3)
+
+
+meansr <- tapply(suicide_rate2$suicides.100k.pop, INDEX = list(suicide_rate2$sex, suicide_rate2$year), mean, na.rm=TRUE)
+
+dev.off()
+matplot(colnames(meansr), t(meansr), xlab="Year", las =1,
+        ylab="Average Suicide per 100K Population", type="b", lty=1, pch=19,
+        main = "Graph: Suicide Rate Rate of Different Gender from 1985 to 2015")
+nn <- nrow(meansr)
+legend("left", rownames(meansr),col=seq_len(nn),cex=0.8,fill=seq_len(nn))
+
+
+
+#To create the box plot and histogram of GDP per Capita
+
+par(mfrow = c(2,1), mai = c(2,4,2,2), mar = c(2,4,2,2))
+boxplot(suicide_rate2$gdp_per_capita,
+        horizontal = T,
+        col = "gold",
+        main = "Graph: GDP per Capital" ,
+        ylim = c(0, 120000),
+        cex.axis = 0.8)
+text(x= boxplot.stats(suicide_rate2$gdp_per_capita)$stats,
+     labels= round(boxplot.stats(suicide_rate2$gdp_per_capita)$stats, 2),
+     y = 0.6,
+     cex = 0.6)
+abline(v = mean(suicide_rate2$gdp_per_capita),
+       col = "red",
+       lwd = 1)
+text(x = mean(suicide_rate2$gdp_per_capita)+10000,
+     y= 0.8,
+     paste("Mean:", round(mean(suicide_rate2$gdp_per_capita),1)),
+     col = "red",
+     cex = 0.8,
+     pos = 1)
+hist(suicide_rate2$gdp_per_capita,
+     main="",
+     breaks = 70,
+     las =1,
+     col = brewer.pal(8, "Accent"),
+     cex.axis = 0.8,
+     xlim = c(0, 120000),
+     ylab = "")
+
+
+#Suicide Rate of each age group
+ggplot(data = suicide_rate, mapping = aes(x = reorder(age, suicides_no), y = suicides_no, fill = age)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette="Purples") + coord_flip() +
+  labs(title="Suicide Rate of each age group",x="Age", y = "Suicide count") +
+  theme_classic()
+
+
+#Boxplot Representation of GDP per year per 100 Million Population
+par(mfrow = c(2,1), mai = c(2,4,2,2), mar = c(2,4,2,2))
+
+box_mean = mean(suicide_rate2$gdp_for_year_100M)
+boxplot(suicide_rate2$gdp_for_year_100M,
+        horizontal = T,
+        main = "Boxplot Representation of GDP per year per 100 Million Population",
+        xlab = "GDP per Year per 100M",
+        ylim = c(0, 10000),
+        col = "slateblue1",
+        cex.axis = 0.7)
+abline(v = mean(suicide_rate2$gdp_for_year_100M),
+       col = "red",
+       lwd = 1)
+text(x = mean(suicide_rate2$gdp_for_year_100M)+1500,
+     y= 0.8,
+     paste("Mean:", round(mean(suicide_rate2$gdp_for_year_100M),1)),
+     col = "red",
+     cex = 0.8,
+     pos = 2)
+text(x= boxplot.stats(suicide_rate2$gdp_for_year_100M)$stats,
+     labels= round(boxplot.stats(suicide_rate2$gdp_for_year_100M)$stats, 1),
+     y = 0.6,
+     cex = 0.6)
+
+hist(suicide_rate2$gdp_for_year_100M,
+     breaks = 800,
+     xlim = c(0, 10000),
+     main = "Histogram Representation of GDP per year per 100 Million Population",
+     ylab = "Frequency",
+     xlab = "GDP per Year per 100M",
+     col = "slateblue1",
+     las = 1,
+     cex.axis = 0.7)
+
+
+
+#Graph: Human Development Index for the Year
+
+par(mfrow = c(2,1), mai = c(2,4,2,2), mar = c(2,4,2,2))
+boxplot(suicide_rate2$HDI.for.year,
+        horizontal = T,
+        col = "pink",
+        main = "Graph: Human Development Index for the Year" ,
+        ylim = c(0.4, 1),
+        cex.axis = 0.8)
+text(x= boxplot.stats(suicide_rate2$HDI.for.year)$stats,
+     labels= round(boxplot.stats(suicide_rate2$HDI.for.year)$stats, 2),
+     y = 0.6,
+     cex = 0.6)
+abline(v = mean(suicide_rate2$HDI.for.year),
+       col = "red",
+       lwd = 1)
+text(x = mean(suicide_rate2$HDI.for.year),
+     y= 0.8,
+     paste("Mean:", round(mean(suicide_rate2$HDI.for.year),1)),
+     col = "red",
+     cex = 0.8,
+     pos = 1)
+hist(suicide_rate2$HDI.for.year,
+     main="",
+     breaks = 70,
+     las =1,
+     col = brewer.pal(8, "Accent"),
+     cex.axis = 0.8,
+     xlim = c(0.4, 1),
+     ylab = "")
+
+
+#-------------------------------------------Milestone 2--------------------------------------------
+#----------------------------------------Hypothesis Testing----------------------------------------
+
+# Question 1: Is the average suicide rate in the year group 2010 onwards higher than the population mean?
+
+#H0 = The average suicide rate in the year group 2010 onwards has the same average suicide rate of the whole population.
+#H1 = The average suicide rate in the year group 2010 onwards is higher than the average suicide rate of the whole population. (Claim)
+
+year<-subset(suicide_rate2, subset = (suicide_rate2$year_group == "2010 onwards"))
+
+#Distribution of 2010 onwards suicide rate
+par(mfrow= c(1,2), cex= 0.8, mgp = c(3,1,0))
+qqPlot(year$suicides.100k.pop, ylab = "Suicide rate in the year group of 2010 onwards", las = 1)
+hist(year$suicides.100k.pop, freq = FALSE, las = 1, col = "#F5EFA4", xlab = "Suicide rate \n in the year group of 2010 onwards", main = "")
+curve(dnorm(x, mean= mean(year$suicides.100k.pop), sd = sd(year$suicides.100k.pop)), col = "red", lwd =2, add = TRUE)
+mtext("Suicide rate in the year group of 2010 onwards", side = 3, line = -2, outer = TRUE, cex = 0.8, font = 2)
+
+#One sample T-test
+ttest1 <-t.test(year$suicides.100k.pop, mu = 11.99, alternative = "greater", conf.level = 0.95)
+ttest1
+ggdensity(year, x= "suicides.100k.pop", rug = TRUE, fill = "lightgray") +
+  scale_x_continuous(limits = c(0,50)) +
+  stat_central_tendency(type = "mean", color = "red", linetype = "dashed") +
+  geom_vline(xintercept = 11.99, color = "blue", linetype ="dashed") 
+
+
+
+
+# Question 2: Is the average suicide rate of male GenX higher than the average suicide rate of female GenX?
+
+#H0 = The average male GenX suicide rate has no difference with the average female GenX suicide rate.
+#H1 = The average male GenX suicide rate higher than the average female GenX suicide rate. (Claim)
+
+
+#two-sample hypothesis test: compare generation X male and female suicide rate
+
+GenX <- subset(suicide_rate2, subset=(suicide_rate2$generation == "Generation X"))
+fgenx <- subset(GenX, subset=(GenX$sex =="Female"))
+mgenx <- subset(GenX, subset = (GenX$sex == "Male"))
+
+#Distribution of GenX female and male suicide rates
+par(mfrow= c(2,2), cex= 0.8, mgp = c(3,1,0), mai = c(0.5,1,0.5,0.5))
+qqPlot(fgenx$suicides.100k.pop, ylab = "Female GenX Suicide Rate", las = 1)
+qqPlot(mgenx$suicides.100k.pop, ylab = "Male GenX Suicide Rate", las = 1)
+hist(fgenx$suicides.100k.pop, freq = FALSE, las = 1, col = "#F5EFA4", xlab = "Female GenX Suicide Rate", main = "")
+curve(dnorm(x, mean= mean(fgenx$suicides.100k.pop), sd = sd(fgenx$suicides.100k.pop)), col = "red", lwd =2, add = TRUE)
+hist(mgenx$suicides.100k.pop, freq = FALSE, las = 1, col = "#A4B3F5", xlab = "Male GenX Suicide Rate", main = "")
+curve(dnorm(x, mean= mean(mgenx$suicides.100k.pop), sd = sd(mgenx$suicides.100k.pop)), col = "red", lwd =2, add = TRUE)
+mtext(" GenX Suicide Rate", side = 3, line = -2, outer = TRUE, cex = 0.8, font = 2)
+
+#varaince check
+var.test(mgenx$suicides.100k.pop, fgenx$suicides.100k.pop)
+
+#two-sample t-test
+t.test(mgenx$suicides.100k.pop, fgenx$suicides.100k.pop, alternative = "greater", conf.level = 0.95, var.equal = F)
+
+
+
+# Question 3: Is the HDI of GenX lower than the HDI of GenZ and Boomers?
+#GenX vs GenZ
+#H0 = The average HDI of GenX suicide rate has no difference with the HDI of GenZ
+#H1 = The average HDI of GenX suicide rate is lower than the HDI of GenZ (Claim)
+
+
+#GenX vs Boomers
+#H0 = The average HDI of GenX suicide rate has no difference with the HDI of Boomers 
+#H1 = The average HDI of GenX suicide rate is lower than the HDI of GenZ (Claim)
+
+#Two-sample t-test on HDI
+GenZ <-subset(suicide_rate2, subset=(suicide_rate2$generation == "Generation Z"))
+GenBoom <- subset(suicide_rate2, subset=(suicide_rate2$generation == "Boomers"))
+
+#Distribution of GenX, GenZ, Boomers HDI
+par(mfrow= c(2,3), cex= 0.6, mgp = c(3,1,0), mai = c(0.5,0.8,0.5,0.5))
+qqPlot(GenX$HDI.for.year, ylab = "GenX HDI", las = 1)
+qqPlot(GenZ$HDI.for.year, ylab = "GenZ HDI", las = 1)
+qqPlot(GenBoom$HDI.for.year, ylab = "GenBoomer HDI", las = 1)
+hist(GenX$HDI.for.year, freq = FALSE, las = 1, col = "#F5EFA4", xlab = "GenX HDI", main = "", ylim = c(0, 5))
+curve(dnorm(x, mean= mean(GenX$HDI.for.year), sd = sd(GenX$HDI.for.year)), col = "red", lwd =2, add = TRUE)
+hist(GenZ$HDI.for.year, freq = FALSE, las = 1, col = "#A4B3F5", xlab = "GenZ HDI", main = "", ylim = c(0, 5))
+curve(dnorm(x, mean= mean(GenZ$HDI.for.year), sd = sd(GenZ$HDI.for.year)), col = "red", lwd =2, add = TRUE)
+hist(GenBoom$HDI.for.year, freq = FALSE, las = 1, col = "pink", xlab = "GenBoomer HDI", main = "", ylim = c(0, 5))
+curve(dnorm(x, mean= mean(GenBoom$HDI.for.year), sd = sd(GenBoom$HDI.for.year)), col = "red", lwd =2, add = TRUE)
+mtext("HDI of GenX, GenZ and GenBoomer", side = 3, line = -2, outer = TRUE, cex = 0.8, font = 2)
+
+#Variance Check
+var.test(GenX$HDI.for.year, GenZ$HDI.for.year)
+var.test(GenX$HDI.for.year, GenBoom$HDI.for.year)
+
+#two-sample t-tests
+t.test(GenX$HDI.for.year, GenZ$HDI.for.year, alternative = "less", conf.level = 0.95, var.equal = F)
+t.test(GenX$HDI.for.year, GenBoom$HDI.for.year, alternative = "less", conf.level = 0.95, var.equal = T)
+
+
+
+# Question 4: For year 2014, average suicide rate per 100K population of Asia is equal to the global suicide rate per 100K population?
+
+#H0 = Average Suicide rate of Asia is equal to average global suicide rate for year 2014
+#H1 = Average Suicide rate of Asia is not equal to average global suicide rate for year 2014
+
+df_year_2014 <- suicide_rate2[which(suicide_rate2$year=="2014"),]
+mean_global_srate <- mean(df_year_2014$suicides.100k.pop)
+srate_aisa_2014 <- df_year_2014[which(df_year_2014$continent == "Asia"),"suicides.100k.pop"]
+
+# Distribution of Suicide rate in Asia continent
+par(mfcol = c(1,1))
+hist(srate_aisa_2014, freq = F, breaks = 20, col = "#ACF4FC", main = "Suicide rate distribution across Asia", 
+     xlab = "Suicide rate per 100K population")
+lines(density(srate_aisa_2014), col = "#F92F79", lwd = 2)
+
+#Hypothesis Testing
+t.test(srate_aisa_2014,mu=mean_global_srate, conf.level = 0.95, alternative = "two.sided")
+
+
+
+# Question 5: For year 2010, average suicide rate of a sample country with high GDP per capita is higher
+
+df_year_2010 <- suicide_rate2[which(suicide_rate2$year=="2010"),]
+
+ukraine_srate <- df_year_2010[which(df_year_2010$country == 'Ukraine'), "suicides.100k.pop"]
+us_srate <- df_year_2010[which(df_year_2010$country == "United States"), "suicides.100k.pop"]
+
+# Shapiro Wilk Normality test
+shapiro.test(us_srate)
+# Shapiro Wilk Normality test
+shapiro.test(ukraine_srate)
+
+# Distribution of Suicide rate for United States and Ukraine in 2010
+par(mfcol = c(1,2))
+hist(us_srate, freq = F, col = "#89FF90", main = "US suicide rate in 2010")
+lines(density(us_srate), col = "#F92F79", lwd = 2)
+hist(ukraine_srate, freq = F, col = "#FFF889", main = "Ukraine suicide rate in 2010")
+lines(density(ukraine_srate), col = "#F92F79", lwd = 2)
+
+# Hypothesis testing
+t.test(us_srate,ukraine_srate, alternative = "greater", conf.level = 0.95)
+
+
+
+#Question 6: Is the mean suicide no of Generation X and Silent similar?
+#H0 <- Generation X suicide no = Silent generation suicide no
+#H1 <- Generation X suicide no ≠ Silent generation suicide no
+
+# Assigning the variables in a data frame
+gen_suicideno <- data.frame(suicide_rate2$generation, suicide_rate2$suicides_no)
+gen_suicideno <- setNames(gen_suicideno, c('generations', 'suicide_nos'))
+
+# Filtering different generations and assigning to different objects
+fil_genx <- filter(gen_suicideno, generations == c('Generation X'))
+fil_gens <- filter(gen_suicideno, generations == c('Silent'))
+
+fil_genxno <- fil_genx$suicide_nos
+fil_gensno <- fil_gens$suicide_nos
+
+# T-test for suicide_no of Generation X and Silent
+t.test(fil_genxno, fil_gensno)
+
+meanx <- mean(fil_genxno)
+means <- mean(fil_gensno)
+par(mfcol = c(1:2))
+boxplot(fil_gensno,ylim = c(0, 600), col = 'cornflowerblue')
+abline(h = means, col=c("azure4"), lwd=3, lty=2)
+title(main = "Silent representation of suicide nos", ylab = "suicide nos")
+boxplot(fil_genxno,ylim = c(0, 600), col = 'cornflowerblue')
+abline(h = meanx,col=c("azure4"),lwd=3, lty=2)
+title(main = "Generation X representation of suicide nos", ylab = "suicide nos")
+
+
+
+#---------------------------------------- Final Module------------------------------------------------------------------
+#------------------------------ Correlation and Regression Analysis-----------------------------------------------------
+
+# Preparing data for analyzing Generation X and Millenials
+
+df_gen <- suicide_rate2 %>% group_by(country, year) %>% filter(generation == "Generation X") %>%
+  summarise(
+    avg_suicide_no = mean(suicides_no),
+    avg_suicide_rate = mean(suicides.100k.pop),
+    hdi = HDI.for.year,
+    gdp_per_capita
+  )
+
+# getting minimum outlier
+min_out <- min(boxplot.stats(df_gen$avg_suicide_rate)$out)
+
+# removing outliers
+df_gen <- df_gen[df_gen$avg_suicide_rate<min_out, ]
+
+# investigatory boxplot
+boxplot( df_gen$avg_suicide_rate)
+
+# Getting correlation value
+cor(df_gen$gdp_per_capita,df_gen$avg_suicide_rate)
+
+# scatterplot for correlation for Generation X
+scatterplot(df_gen$gdp_per_capita,df_gen$avg_suicide_rate,
+            regLine=list(method=lm, lty=1, lwd=2, col="darkgreen"),
+            legend = c(title="cyl", coords="topright"),
+            main = "GDP per capita vs Average Suicide rate",
+            ylab= "Average Suicide Rate",
+            xlab = "GDP Per Capita",
+            col=rgb(0,70,0,50,maxColorValue=120), pch=16, frame = TRUE, smooth = TRUE)
+
+# Regression analysis
+lmgen <- lm(df_gen$avg_suicide_rate~df_gen$gdp_per_capita)
+summary(lmgen)
+
+#preparing data for GDP per Capita vs Average Suicide rate for Millenials
+df_mil <- suicide_rate2 %>% group_by(country, year) %>% filter(generation == "Millenials") %>%
+  summarise(
+    avg_suicide_no = mean(suicides_no),
+    avg_suicide_rate = mean(suicides.100k.pop),
+    hdi = HDI.for.year,
+    gdp_per_capita
+  )
+
+# getting outliers
+min_out_mil <- min(boxplot.stats(df_mil$avg_suicide_rate)$out)
+
+# filtering outliers
+df_mil <- df_mil[df_mil$avg_suicide_rate<min_out_mil, ]
+
+# investigatory boxplot
+boxplot( df_mil$avg_suicide_rate)
+
+# Getting correlation value
+cor(df_mil$gdp_per_capita,df_mil$avg_suicide_rate)
+
+# Plotting correlation and regression for Millenials
+scatterplot(df_mil$gdp_per_capita,df_mil$avg_suicide_rate,
+            regLine=list(method=lm, lty=1, lwd=2, col="red"),
+            legend = c(title="cyl", coords="topright"),
+            main = "GDP per capita vs Average Suicide rate",
+            ylab= "Average Suicide Rate",
+            xlab = "GDP Per Capita",
+            col=rgb(0,0,90,20,maxColorValue=100), pch=16, frame = TRUE)
+
+
+# Regression Analysis
+lmmil <- lm(df_mil$avg_suicide_rate~df_mil$gdp_per_capita)
+summary(lmmil)
+
+
+#Correlation Table
+
+cor <- cor(suicide_rate2[,c(5,6,7,8,9,10)])
+
+round(cor, 3) %>%
+  kbl(caption = "Corraltion Table: Numerial Variables") %>%
+  kable_classic(full_width = F, html_font = "Cambria")
+  
+
+
+#Regression
+#GDP vs HDI
+
+# getting GDP Per Capita outlier
+gdp_out <- min(boxplot.stats(suicide_rate2$gdp_per_capita)$out)
+boxplot(suicide_rate2$gdp_per_capita)
+
+
+# removing outlier
+gdp <- suicide_rate2[suicide_rate2$gdp_per_capita < gdp_out,]
+
+#getting HDI outliers
+hdi_out <- boxplot.stats(gdp$HDI.for.year)$out
+
+# removing outlier
+gdphdi <- gdp[gdp$HDI.for.year > hdi_out,]
+
+#Normality Check
+par(mfcol = c(2, 2))
+qqPlot(gdphdi$gdp_per_capita, ylab = "GDP per Capita")
+hist(gdphdi$gdp_per_capita, freq = F, main = "", col = "gold", xlab = "GDP per Capita")
+curve(dnorm(x, mean= mean(gdp$gdp_per_capita), sd = sd(gdp$gdp_per_capita)), col = "red", lwd =2, add = TRUE)
+qqPlot(gdp$HDI.for.year, ylab = "Human Development Index")
+hist(gdp$HDI.for.year, freq = F, main = "", col = "pink", xlab = "Human Development Index", ylim = c(0,5))
+curve(dnorm(x, mean = mean(gdp$HDI.for.year), sd = sd(gdp$HDI.for.year)), col="red", lwd =2, add = TRUE)
+mtext("Normality Check: GDP per Capita and HDI", side = 3, line = -2, outer = TRUE, cex = 0.8, font = 2)
+
+
+#correlation
+cor(gdphdi$gdp_per_capita , gdphdi$HDI.for.year)
+
+#scattetplot GDP vs HDI
+scatterplot(gdphdi$gdp_per_capita , gdphdi$HDI.for.year, xlab = "GDP Per Capita", ylab = "Human Development Index", las = 1, main = "GDP per Capita vs HDI", boxplots = FALSE, regLine=list(method=lm, lty=1, lwd=2, col="red"), pch=16, frame = TRUE)
+
+cor.test(gdp$HDI.for.year , gdp$gdp_per_capita)
+
+#Regression Analysis: GDP HDI
+GHlm <- lm(gdphdi$HDI.for.year ~ gdphdi$gdp_per_capita)
+summary(GHlm)
+
+#Residual Check
+par(mfcol = c(1, 1))
+plot(gdphdi$gdp_per_capita, GHlm$residuals,pch=21,col="blue",
+     xlab="x=GDP per Capita",
+     ylab="Residuals",
+     main="Residual Plot: GDP per Capita vs HDI")
+abline(h=0, col ="red")
+
+
+
+#GenX Female: GDP per Capita vs Suicide rate
+
+#removing outliers
+fsui_out <- min(boxplot.stats(fgenx$suicides.100k.pop)$out)
+fgenx_sui <- fgenx[fgenx$suicides.100k.pop <fsui_out, ]
+fgdp_out <- min(boxplot.stats(fgenx_sui$gdp_per_capita)$out)
+fgenx_suigdp <- fgenx_sui[fgenx_sui$gdp_per_capita < fgdp_out, ]
+
+
+#Correlation
+cor(fgenx_suigdp$suicides.100k.pop , fgenx_suigdp$gdp_per_capita)
+
+#scatterplot
+scatterplot(fgenx_suigdp$suicides.100k.pop, fgenx_suigdp$gdp_per_capita, xlab = "GDP for Year (100M) ", ylab = "Suicide Number", las = 1, main = "GenX Female: \n Scatterplot of GDP vs Suicide Number", las =1, boxplots = FALSE)
+
+
+#Normality Check
+par(mfcol = c(2, 2))
+qqPlot(fgenx_suigdp$suicides.100k.pop, ylab = "Suicide Rate")
+hist(fgenx_suigdp$suicides.100k.pop, freq = F, main = "", col = "gold", xlab = "GenX Female Suicide Rate")
+curve(dnorm(x, mean= mean(fgenx_suigdp$suicides.100k.pop), sd = sd(fgenx_suigdp$suicides.100k.pop)), col = "red", lwd =2, add = TRUE)
+qqPlot(fgenx_suigdp$gdp_per_capita, ylab = "GDP per Capita")
+hist(fgenx_suigdp$gdp_per_capita, freq = F, main = "", col = "pink", xlab = "GDP")
+curve(dnorm(x, mean = mean(fgenx_suigdp$gdp_per_capita), sd = sd(fgenx_suigdp$gdp_per_capita)), col="red", lwd =2, add = TRUE)
+mtext("Normality Check: GenX Female GDP per Capita and Suicide Rate", side = 3, line = -2, outer = TRUE, cex = 0.8, font = 2)
+
+
+#Regression
+fgenx.lm <- lm(fgenx_suigdp$suicides.100k.pop ~ fgenx_suigdp$gdp_per_capita)
+summary(fgenx.lm)
+
+
+#GenX Male: GDP per Capita vs Suicide rate
+
+#Removing outliers
+msui_out <- min(boxplot.stats(mgenx$suicides.100k.pop)$out)
+mgenx_sui <- mgenx[mgenx$suicides.100k.pop <fsui_out, ]
+mgdp_out <- min(boxplot.stats(mgenx_sui$gdp_per_capita)$out)
+
+mgenx_suigdp <- mgenx_sui[mgenx_sui$gdp_per_capita < fgdp_out, ]
+
+#Correlation
+cor(mgenx_suigdp$suicides.100k.pop, mgenx_suigdp$gdp_per_capita)
+
+
+#Scatterplot
+scatterplot(mgenx_suigdp$gdp_for_year_100M, mgenx_suigdp$suicides_no, xlab = "GDP for Year (100M) ", ylab = "Suicide Number", las = 1, main = "GenX Male: \n Scatterplot of GDP vs Suicide Number", las =1, boxplots = FALSE)
+
+
+#Normality Check
+par(mfcol = c(2, 2))
+qqPlot(mgenx_suigdp$suicides.100k.pop, ylab = "Suicide Rate")
+hist(mgenx_suigdp$suicides.100k.pop, freq = F, main = "", col = "gold", xlab = "GenX Male Suicide Rate")
+curve(dnorm(x, mean= mean(mgenx_suigdp$suicides.100k.pop), sd = sd(mgenx_suigdp$suicides.100k.pop)), col = "red", lwd =2, add = TRUE)
+qqPlot(mgenx_suigdp$gdp_per_capita, ylab = "GDP per Capita")
+hist(mgenx_suigdp$gdp_per_capita, freq = F, main = "", col = "pink", xlab = "GDP")
+curve(dnorm(x, mean = mean(mgenx_suigdp$gdp_per_capita), sd = sd(mgenx_suigdp$gdp_per_capita)), col="red", lwd =2, add = TRUE)
+mtext("Normality Check: GenX Male GDP per Capita and Suicide Rate", side = 3, line = -2, outer = TRUE, cex = 0.8, font = 2)
+
+
+#Regression
+mgenx.lm <- lm(mgenx_suigdp$suicides.100k.pop ~ mgenx_suigdp$gdp_per_capita)
+summary(mgenx.lm)
+
+
+#Visualization
+
+#removing outliers from GenX
+xsui_out <- min(boxplot.stats(GenX$suicides.100k.pop)$out)
+x_sui <- GenX[GenX$suicides.100k.pop< xsui_out, ]
+xgdp_out <- min(boxplot.stats(x_sui$gdp_per_capita)$out)
+x_suigpd <- x_sui[x_sui$gdp_per_capita < xgdp_out, ]
+
+#Visualization with ggplot2
+regplot <- ggplot(data = x_suigpd, mapping = aes(x = gdp_per_capita, y = suicides.100k.pop)) + geom_point(mapping = aes(color = sex) ) +geom_smooth(mapping = aes(color = sex) )
+print(regplot + ggtitle("Regression Model: GDP per Capita vs Suicide Rate of Generation X by Gender") + labs(y="Suicide Rate", x = "GDP per Capita"))
+
+
+
+# Visualizing the suicide rate per the continent
+suicide_rate2 %>%
+  group_by(continent, sex) %>%
+  summarize(n = n(), 
+            suicides = sum(as.numeric(suicides_no)), 
+            population = sum(as.numeric(population)), 
+            suicide_per_100k = (suicides / population) * 100000) %>%
+  ggplot(aes(x = continent, y = suicide_per_100k, fill = sex)) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  labs(title = "Continent wise Gender Disparity",
+       x = "Continent", 
+       y = "Suicides per 100k", 
+       fill = "Sex") +
+  coord_flip()
+
+# Filtering and preparing data for Europe continent
+df <- suicide_rate2 %>% group_by(country, year) %>% filter(continent == "Europe") %>%
+  summarise(
+    avg_suicide_rate = mean(suicides.100k.pop),
+    hdi = HDI.for.year,
+    gdp_per_capita
+  )
+df_unq <- unique(df)
+
+
+# Normality check for average suicide Rate
+par(mfcol = c(1,2))
+hist(log(df_unq$avg_suicide_rate), breaks = 30, freq = F, col = "#1A65FA", 
+     xlab = "Average Suicide Rate", ylab = "Density", main = "Distribution of Average Suicide Rate data for Europe")
+lines(density(log(df_unq$avg_suicide_rate)), lwd = 3, col = "#FA7B1A")
+
+# Normality check for HDI
+hist(log(df_unq$hdi), breaks = 30, freq = F, col = "#56FA1A", 
+     xlab = "Human Development Index", ylab = "Density", main = "Distribution of HDI data points for Europe")
+lines(density(log(df_unq$hdi)), lwd = 3, col = "#1A22FA")
+
+# Correlation of Average_suicide_rate ~ HDI
+cor(df_unq$hdi, df_unq$avg_suicide_rate)
+
+cor.test(df_unq$hdi, df_unq$avg_suicide_rate)
+
+
+scatterplot(df_unq$hdi,df_unq$avg_suicide_rate,
+            grid = F,
+            boxplots = F,
+            smooth = list(col.smooth = "red",
+                          col.spread = "green"),
+            ylab = "Average suicide rate",
+            main = "Average suicide rate ~ HDI in Europe",
+            xlab = "Human Development Index",
+)
+
+# Checking for regression
+lin_reg <- lm(df_unq$avg_suicide_rate ~ df_unq$hdi, data = df_unq)
+summary(lin_reg)
+
